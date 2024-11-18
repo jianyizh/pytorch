@@ -134,7 +134,7 @@ def benchmark_all_kernels(benchmark_name, benchmark_all_configs):
                     launcher.n_spills,
                     launcher.shared,
                     prefix=f"{kernel_desc} ",
-                )
+                ), triton_kernel.inductor_meta['kernel_name'], kernel_mod.__file__
             )
 
         nfound += 1

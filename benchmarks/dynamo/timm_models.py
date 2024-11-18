@@ -265,6 +265,10 @@ class TimmRunner(BenchmarkRunner):
         batch_size=None,
         extra_args=None,
     ):
+        dump_path = os.getenv("XPU_TRITON_KERNEL_DUMP")
+        if dump_path:
+            dump_path += "/" + model_name
+            os.environ["XPU_TRITON_KERNEL_DUMP"] = dump_path
         if self.args.enable_activation_checkpointing:
             raise NotImplementedError(
                 "Activation checkpointing not implemented for Timm models"

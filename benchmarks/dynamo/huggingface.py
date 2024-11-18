@@ -405,6 +405,10 @@ class HuggingfaceRunner(BenchmarkRunner):
         batch_size=None,
         extra_args=None,
     ):
+        dump_path = os.getenv("XPU_TRITON_KERNEL_DUMP")
+        if dump_path:
+            dump_path += "/" + model_name
+            os.environ["XPU_TRITON_KERNEL_DUMP"] = dump_path
         is_training = self.args.training
         use_eval_mode = self.args.use_eval_mode
         dtype = torch.float32
