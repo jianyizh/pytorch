@@ -51,7 +51,7 @@ Tensor& addmm_out(
       " != ",
       mat2.dtype())
   // complex/double case
-  if (mat1.is_complex() || mat1.scalar_type() == ScalarType::Double) {
+  if (mat1.is_complex()) {
     TORCH_CHECK(
         false, "Double and complex datatype matmul is not supported in oneDNN");
   }
@@ -96,17 +96,27 @@ Tensor& addmm_out(
       bias = self;
     } else {
       Tensor binary = self.dim() == 1 ? self.unsqueeze(0) : self;
-      // Tensor binary = self.expand_as(result);
-      // For post-binary-add, onednn needs binary scale=1.f
-      // Thus we need the following transformation
-      // alpha * matmul(mat1, mat2) + beta * binary
-      // beta * (alpha/beta * matmul(src, wei) + binary)
-      float alpha_ = alpha.to<float>() / beta_;
-      if (alpha_ != 1.f)
-        attr.append_post_eltwise(1.f, alpha_, 0.f, attr.kind_with_linear);
-      attr.append_post_binary(attr.kind_with_binary_add, binary);
-      if (beta_ != 1.f)
-        attr.append_post_eltwise(1.f, beta_, 0.f, attr.kind_with_linear);
+      bool inplace = binary.is_same(result);
+      if (inplace) {
+        attr.append_post_eltwise(
+            1.f, alpha.to<float>(), 0.f, attr.kind_with_linear);
+        attr.append_post_sum(beta_);
+      } else {
+        if (at::native::onednn::is_broadcast(binary)) {
+          at::native::onednn::undo_broadcast(binary);
+        }
+        // Tensor binary = self.expand_as(result);
+        // For post-binary-add, onednn needs binary scale=1.f
+        // Thus we need the following transformation
+        // alpha * matmul(mat1, mat2) + beta * binary
+        // beta * (alpha/beta * matmul(src, wei) + binary)
+        float alpha_ = alpha.to<float>() / beta_;
+        if (alpha_ != 1.f)
+          attr.append_post_eltwise(1.f, alpha_, 0.f, attr.kind_with_linear);
+        attr.append_post_binary(attr.kind_with_binary_add, binary, true);
+        if (beta_ != 1.f)
+          attr.append_post_eltwise(1.f, beta_, 0.f, attr.kind_with_linear);
+      }
     }
   }
   onednn::matmul(result, mat1, mat2, bias, true, attr);
@@ -159,7 +169,7 @@ Tensor& mm_out(const Tensor& self, const Tensor& mat2, Tensor& result) {
     return result;
   }
 
-  if (self.is_complex() || self.scalar_type() == ScalarType::Double) {
+  if (self.is_complex()) {
     TORCH_CHECK(
         false, "Double and complex datatype matmul is not supported in oneDNN");
   }
@@ -213,7 +223,7 @@ Tensor& baddbmm_out(
       input.sizes());
 
   // complex and double case
-  if (batch1.is_complex() || batch2.scalar_type() == ScalarType::Double) {
+  if (batch1.is_complex()) {
     TORCH_CHECK(
         false, "Double and complex datatype matmul is not supported in oneDNN");
   }
@@ -230,12 +240,22 @@ Tensor& baddbmm_out(
   } else {
     binary = input.dim() < 3 ? input.unsqueeze(0) : input;
     binary = binary.dim() < 3 ? binary.unsqueeze_(0) : binary;
-    float alpha_ = alpha.to<float>() / beta_;
-    if (alpha_ != 1.f)
-      attr.append_post_eltwise(1.f, alpha_, 0.f, attr.kind_with_linear);
-    attr.append_post_binary(attr.kind_with_binary_add, binary);
-    if (beta_ != 1.f)
-      attr.append_post_eltwise(1.f, beta_, 0.f, attr.kind_with_linear);
+    bool inplace = binary.is_same(result);
+    if (inplace) {
+      attr.append_post_eltwise(
+          1.f, alpha.to<float>(), 0.f, attr.kind_with_linear);
+      attr.append_post_sum(beta_);
+    } else {
+      if (at::native::onednn::is_broadcast(binary)) {
+        at::native::onednn::undo_broadcast(binary);
+      }
+      float alpha_ = alpha.to<float>() / beta_;
+      if (alpha_ != 1.f)
+        attr.append_post_eltwise(1.f, alpha_, 0.f, attr.kind_with_linear);
+      attr.append_post_binary(attr.kind_with_binary_add, binary, true);
+      if (beta_ != 1.f)
+        attr.append_post_eltwise(1.f, beta_, 0.f, attr.kind_with_linear);
+    }
   }
   onednn::matmul(result, batch1, batch2, at::Tensor(), true, attr);
   return result;
@@ -291,7 +311,7 @@ Tensor& addbmm_out(
       batch1.dim(),
       " and ",
       batch2.dim());
-  if (self.is_complex() || self.scalar_type() == ScalarType::Double) {
+  if (self.is_complex()) {
     TORCH_CHECK(
         false, "Double and complex datatype matmul is not supported in oneDNN");
   }
@@ -356,7 +376,7 @@ Tensor& bmm_out(const Tensor& self, const Tensor& batch2, Tensor& result) {
     return result;
   }
 
-  if (self.is_complex() || self.scalar_type() == ScalarType::Double) {
+  if (self.is_complex()) {
     TORCH_CHECK(
         false, "Double and complex datatype matmul is not supported in oneDNN");
   }
