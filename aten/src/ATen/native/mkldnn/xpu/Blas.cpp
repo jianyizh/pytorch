@@ -110,6 +110,9 @@ Tensor& addmm_out(
         // Thus we need the following transformation
         // alpha * matmul(mat1, mat2) + beta * binary
         // beta * (alpha/beta * matmul(src, wei) + binary)
+        binary = at::native::onednn::is_onednn_matmul_strides(binary)
+          ? binary
+          : binary.contiguous();
         float alpha_ = alpha.to<float>() / beta_;
         if (alpha_ != 1.f)
           attr.append_post_eltwise(1.f, alpha_, 0.f, attr.kind_with_linear);
@@ -249,6 +252,9 @@ Tensor& baddbmm_out(
       if (at::native::onednn::is_broadcast(binary)) {
         at::native::onednn::undo_broadcast(binary);
       }
+      binary = at::native::onednn::is_onednn_matmul_strides(binary)
+          ? binary
+          : binary.contiguous();
       float alpha_ = alpha.to<float>() / beta_;
       if (alpha_ != 1.f)
         attr.append_post_eltwise(1.f, alpha_, 0.f, attr.kind_with_linear);
