@@ -2205,8 +2205,54 @@ class GraphLowering(torch.fx.Interpreter):
             phase_name="code_gen",
             log_pt2_compile_event=True,
             dynamo_compile_column_us="inductor_code_gen_cumulative_compile_time_us",
-        ):
-            return self._compile_to_module()
+        ):  
+            r = self._compile_to_module()
+            # "extern_kernels.convolution": torch.ops.aten.convolution,
+            # "extern_kernels.mm": torch.ops.aten.mm,
+            # "extern_kernels.bmm": torch.ops.aten.bmm,
+            # "extern_kernels.addmm": torch.ops.aten.addmm,
+            for node in self.scheduler.nodes:
+                if node.is_extern():
+                    if node.node.get_kernel_name() == "extern_kernels.convolution":
+                        assert len(node.node.inputs) == 2
+                        # conv bias should be none because it removes bias in lowering
+                        print("conv",
+                              node.node.inputs[0].get_size(),
+                              node.node.inputs[0].get_stride(),
+                              node.node.inputs[1].get_size(),
+                              node.node.inputs[1].get_stride(),
+                              node.node.kwargs)
+                    elif node.node.get_kernel_name() == "extern_kernels.addmm":
+                        assert len(node.node.inputs) == 3
+                        print("addmm",
+                              node.node.inputs[0].get_size(),
+                              node.node.inputs[0].get_stride(),
+                              node.node.inputs[1].get_size(),
+                              node.node.inputs[1].get_stride(),
+                              node.node.inputs[2].get_size(),
+                              node.node.inputs[2].get_stride(),
+                              node.node.kwargs)
+                    elif node.node.get_kernel_name() == "extern_kernels.mm":
+                        assert len(node.node.inputs) == 2
+                        print("mm",
+                              node.node.inputs[0].get_size(),
+                              node.node.inputs[0].get_stride(),
+                              node.node.inputs[1].get_size(),
+                              node.node.inputs[1].get_stride(),
+                              node.node.kwargs)
+                    elif node.node.get_kernel_name() == "extern_kernels.bmm":
+                        assert len(node.node.inputs) == 2
+                        print("bmm",
+                              node.node.inputs[0].get_size(),
+                              node.node.inputs[0].get_stride(),
+                              node.node.inputs[1].get_size(),
+                              node.node.inputs[1].get_stride(),
+                              node.node.kwargs)
+                    else:
+                        print(node.node.get_kernel_name())
+
+
+            return r
 
     def _compile_to_module(self) -> ModuleType:
         from .codecache import PyCodeCache
