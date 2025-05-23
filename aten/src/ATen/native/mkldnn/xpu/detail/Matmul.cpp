@@ -219,6 +219,18 @@ sycl::event matmul(
   dst_usr_md = dnnl::memory::desc(dst_dims, dst_usr_dt, dst_strides);
 
   // STEP4: create memory
+    if (m1.storage_offset() > 0) {
+    std::cout<<m1.data_ptr()<<" m1 offset is "<<m1.storage_offset()<<std::endl;
+    TORCH_CHECK(reinterpret_cast<uintptr_t>(m1.data_ptr()) % 16 == 0, "m1 not 16 byte aligned");
+  }
+  if (m2.storage_offset() > 0) {
+    std::cout<<m2.data_ptr()<<" m2 offset is "<<m2.storage_offset()<<std::endl;
+    TORCH_CHECK(reinterpret_cast<uintptr_t>(m2.data_ptr()) % 16 == 0, "m2 not 16 byte aligned");
+  }
+  if (dst.storage_offset() > 0) {
+    std::cout<<dst.data_ptr()<<" dst offset is "<<dst.storage_offset()<<std::endl;
+    TORCH_CHECK(reinterpret_cast<uintptr_t>(dst.data_ptr()) % 16 == 0, "dst not 16 byte aligned");
+  }
   auto m1_usr_m = make_onednn_memory(m1_usr_md, engine, m1.data_ptr());
   auto m2_usr_m = make_onednn_memory(m2_usr_md, engine, m2.data_ptr());
   auto dst_usr_m = make_onednn_memory(dst_usr_md, engine, dst.data_ptr());
