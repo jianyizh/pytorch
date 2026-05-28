@@ -746,8 +746,7 @@ struct LSTMCell : Cell<std::tuple<Tensor, Tensor>, cell_params> {
     const auto& [hx, cx] = hidden;
 
     if (input.is_cuda() || input.is_xpu() || input.is_privateuseone()) {
-      TORCH_CHECK(!pre_compute_input);
-      auto igates = params.matmul_ih(input);
+      auto igates = pre_compute_input ? input : params.matmul_ih(input);
       auto hgates = params.matmul_hh(hx);
       auto result = at::_thnn_fused_lstm_cell(
           igates, hgates, cx, params.b_ih(), params.b_hh());
@@ -860,15 +859,14 @@ struct FullLayer : Layer<Tensor, hidden_type, cell_params> {
       const Tensor& inputs,
       const hidden_type& input_hidden,
       const cell_params& params) const override {
+    Tensor inputs_w;
     if (inputs.device().is_cpu()) {
-      const auto inputs_w = params.linear_ih(inputs);
-      auto unstacked_output =
-          (*this)(inputs_w.unbind(0), input_hidden, params, true);
-      TORCH_CHECK(unstacked_output.outputs.size()>0, "Expected sequence length to be larger than 0 in RNN");
-      return {at::stack(unstacked_output.outputs, 0),
-              unstacked_output.final_hidden};
+      inputs_w = params.linear_ih(inputs);
+    } else {
+      inputs_w = params.matmul_ih(inputs);
     }
-    auto unstacked_output = (*this)(inputs.unbind(0), input_hidden, params);
+    auto unstacked_output =
+        (*this)(inputs_w.unbind(0), input_hidden, params, true);
     TORCH_CHECK(unstacked_output.outputs.size()>0, "Expected sequence length to be larger than 0 in RNN");
     return {at::stack(unstacked_output.outputs, 0),
             unstacked_output.final_hidden};
@@ -891,32 +889,19 @@ struct FullBidirectionalLayer
       const Tensor& input,
       const hidden_type& input_hidden,
       const param_type& params) const override {
-    std::vector<Tensor> step_inputs;
-    if (input.device().is_cpu()) {
-      auto input_w = params.first.linear_ih(input);
-      step_inputs = input_w.unbind(0);
-      auto fw_result = layer_(
-          step_inputs, input_hidden.first, params.first, true);
-      TORCH_CHECK(!fw_result.outputs.empty(), "Expected sequence length to be larger than 0 in RNN");
-      auto fw_output = at::stack(fw_result.outputs, 0);
-      input_w = params.second.linear_ih(input);
-      step_inputs = input_w.unbind(0);
-      auto rev_step_inputs = reverse(std::move(step_inputs));
-      auto rev_result =
-          layer_(rev_step_inputs, input_hidden.second, params.second, true);
-      std::reverse(rev_result.outputs.begin(), rev_result.outputs.end());
-      auto rev_output = at::stack(rev_result.outputs, 0);
-      return {at::cat({fw_output, rev_output}, fw_output.dim() - 1),
-              std::make_pair(fw_result.final_hidden, rev_result.final_hidden)};
-    }
-
-    step_inputs = input.unbind(0);
-    auto fw_result = layer_(step_inputs, input_hidden.first, params.first);
+    auto input_w = input.device().is_cpu() ?
+        params.first.linear_ih(input) : params.first.matmul_ih(input);
+    auto step_inputs = input_w.unbind(0);
+    auto fw_result = layer_(
+        step_inputs, input_hidden.first, params.first, true);
     TORCH_CHECK(!fw_result.outputs.empty(), "Expected sequence length to be larger than 0 in RNN");
     auto fw_output = at::stack(fw_result.outputs, 0);
+    input_w = input.device().is_cpu() ?
+        params.second.linear_ih(input) : params.second.matmul_ih(input);
+    step_inputs = input_w.unbind(0);
     auto rev_step_inputs = reverse(std::move(step_inputs));
     auto rev_result =
-        layer_(rev_step_inputs, input_hidden.second, params.second);
+        layer_(rev_step_inputs, input_hidden.second, params.second, true);
     std::reverse(rev_result.outputs.begin(), rev_result.outputs.end());
     auto rev_output = at::stack(rev_result.outputs, 0);
     return {at::cat({fw_output, rev_output}, fw_output.dim() - 1),
@@ -956,9 +941,11 @@ struct PackedLayer : Layer<PackedSequence, hidden_type, cell_params> {
     Tensor input_w;
     if (input.data.device().is_cpu()) {
       input_w = params.linear_ih(input.data);
-      input_ptr = &input_w;
-      pre_compute_input = true;
+    } else {
+      input_w = params.matmul_ih(input.data);
     }
+    input_ptr = &input_w;
+    pre_compute_input = true;
 
     // Batch sizes is a sequence of decreasing lengths, which are offsets
     // into a 1D list of inputs. At every step we slice out batch_size elements,
@@ -1015,9 +1002,11 @@ struct ReversedPackedLayer : Layer<PackedSequence, hidden_type, cell_params> {
     Tensor input_w;
     if (input.data.device().is_cpu()) {
       input_w = params.linear_ih(input.data);
-      input_ptr = &input_w;
-      pre_compute_input = true;
+    } else {
+      input_w = params.matmul_ih(input.data);
     }
+    input_ptr = &input_w;
+    pre_compute_input = true;
 
     // Here the situation is similar to that above, except we start out with
     // the smallest batch size (and a small set of hidden states we actually use),
