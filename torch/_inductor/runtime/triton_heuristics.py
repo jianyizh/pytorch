@@ -3249,6 +3249,10 @@ def _enforce_reduction_config_block_minimums(
     if min_xblock is None and min_rblock is None:
         return configs
 
+    preserve_tile_product = inductor_meta.get("preserve_reduction_tile_product", True)
+    if inductor_meta.get("tma_min_block_sizes"):
+        preserve_tile_product = False
+
     for cfg in configs:
         if frozenset(("YBLOCK", "ZBLOCK", "R1_BLOCK")) & cfg.kwargs.keys():
             raise AssertionError(
@@ -3283,10 +3287,11 @@ def _enforce_reduction_config_block_minimums(
             ):
                 cfg.kwargs[name] //= 2
 
-        # Preserve the autotuner's original tile-size budget where possible:
-        # raising one block to satisfy a floor should shrink the other block.
-        shrink_to_budget("R0_BLOCK", r_floor)
-        shrink_to_budget("XBLOCK", x_floor)
+        if preserve_tile_product:
+            # Preserve the autotuner's original tile-size budget where possible:
+            # raising one block to satisfy a floor should shrink the other block.
+            shrink_to_budget("R0_BLOCK", r_floor)
+            shrink_to_budget("XBLOCK", x_floor)
 
         check_max_block(cfg.kwargs)
         check_config(

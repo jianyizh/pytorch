@@ -184,6 +184,18 @@ class TestTritonHeuristics(TestCase):
         self.assertEqual(cfg.kwargs["XBLOCK"], 512)
         self.assertEqual(cfg.kwargs["R0_BLOCK"], 128)
 
+    def test_reduction_min_block_keeps_rblock_with_tma_minimums(self):
+        cfg = _enforce_reduction_config_block_minimums(
+            [triton.Config({"XBLOCK": 64, "R0_BLOCK": 1024})],
+            {"x": 4096, "r0_": 4096},
+            {
+                "min_xblock": 128,
+                "tma_min_block_sizes": {"XBLOCK": 8, "R0_BLOCK": 8},
+            },
+        )[0]
+        self.assertEqual(cfg.kwargs["XBLOCK"], 128)
+        self.assertEqual(cfg.kwargs["R0_BLOCK"], 1024)
+
     def test_cached_autotune_enforces_reduction_min_block(self):
         def triton_fn(XBLOCK: tl.constexpr, R0_BLOCK: tl.constexpr):
             pass
