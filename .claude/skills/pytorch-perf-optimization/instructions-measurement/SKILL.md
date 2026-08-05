@@ -13,7 +13,7 @@ description: Device-agnostic measurement of pipeline/instruction throughput util
 |-------|--------|-------|
 | `$RUN_DIR/01_kernel_profiler_setup.json` | Step 1 | vendor_tool |
 | `$RUN_DIR/02_host_vs_device_bound.json` | Step 2 | dominant_kernel_name |
-| `$RUN_DIR/03_kernel_profiler_parser.json` | Step 3 | raw_log_files (VectorEngineProfile), parsed data |
+| `$RUN_DIR/03_kernel_profiler_parser.json` | Step 3 | raw_log_files (per-pipe instruction group), parsed data |
 | `$RUN_DIR/04_kernel_arithmetic_intensity.json` | Step 4 | total_bytes |
 | `$RUN_DIR/05_kernel_memory_compute_bound.json` | Step 5 | peak_bw_gbps |
 | `$RUN_DIR/06_memory_load_store.json` | Step 6 | T_mem_ms, peak_bw_gbps, measured bytes |
@@ -25,7 +25,7 @@ Read ALL prior JSON files. This step MUST run after Step 6.
 | Action | Where |
 |--------|-------|
 | Read prior step JSON files | REMOTE |
-| Read/parse raw VectorEngineProfile and VectorEngineStalls logs from `$RUN_DIR` | REMOTE |
+| Read/parse raw per-pipe instruction and stall logs from `$RUN_DIR` | REMOTE |
 | Compute per-pipe times | LOCAL (arithmetic from extracted counters) |
 | Write step JSON/log to `$RUN_DIR` | REMOTE |
 | Verification | REMOTE |
@@ -55,7 +55,7 @@ Empirical overlap rule:
 
 ### 1. Extract per-pipe instruction counters
 
-From VectorEngineProfile (already collected in Step 3), extract post-warmup median for the dominant kernel:
+From the per-pipe instruction counter log (already collected in Step 3), extract post-warmup median for the dominant kernel:
 - Per-pipe executed slot counts
 - Any MATH/special-function counters (may need to be added separately)
 
@@ -78,7 +78,7 @@ Use T_mem from the memory-load-store step. Classify per the 0.8x overlap rule.
 
 ### 5. Identify dominant pipe sub-counters
 
-Break down the dominant pipe by sub-counters (e.g., INT32 vs INT64 vs MATH for ALU1) to understand the specific bottleneck.
+Break down the dominant pipe by sub-counters (e.g., FP16 vs FP32 for FP pipe, INT32 vs INT64 for INT pipe) to understand the specific bottleneck.
 
 ## REQUIRED OUTPUTS
 
@@ -92,11 +92,11 @@ Break down the dominant pipe by sub-counters (e.g., INT32 vs INT64 vs MATH for A
   "device_freq_ghz": <float>,
   "peak_slots_per_s": <float>,
   "per_pipe": {
-    "ALU0": {"slots": <int>, "T_ms": <float>},
-    "ALU1": {"slots": <int>, "T_ms": <float>},
+    "FP": {"slots": <int>, "T_ms": <float>},
+    "INT": {"slots": <int>, "T_ms": <float>},
     "MATH": {"slots": <int>, "T_ms": <float>},
-    "SEND": {"slots": <int>, "T_ms": <float>},
-    "DPAS": {"slots": <int>, "T_ms": <float>}
+    "MEMORY": {"slots": <int>, "T_ms": <float>},
+    "MATRIX": {"slots": <int>, "T_ms": <float>}
   },
   "sub_counters": {
     "FP16": <int>, "FP32": <int>,
@@ -104,17 +104,17 @@ Break down the dominant pipe by sub-counters (e.g., INT32 vs INT64 vs MATH for A
     "BITCONV": <int>, "CONTROL": <int>
   },
   "T_instruction_ms": <float>,
-  "dominant_pipe": "<ALU0|ALU1|DPAS|SEND>",
+  "dominant_pipe": "<FP|INT|MATRIX|MEMORY>",
   "T_mem_ms": <float>,
-  "primary_bound": "<ALU0|ALU1|DPAS|SEND|memory>",
+  "primary_bound": "<FP|INT|MATRIX|MEMORY|memory-bandwidth>",
   "T_actual_ms": <float>,
   "T_actual_over_T_lower": <float>,
   "stall_breakdown": {
-    "ALUWR_pct": <float>,
-    "SBID_pct": <float>,
-    "PIPESTALL_pct": <float>,
-    "INSTFETCH_pct": <float>,
-    "CONTROL_pct": <float>
+    "alu_dependency_pct": <float>,
+    "memory_dependency_pct": <float>,
+    "pipe_conflict_pct": <float>,
+    "instruction_fetch_pct": <float>,
+    "control_flow_pct": <float>
   },
   "run_dir": "<$RUN_DIR>"
 }
@@ -155,6 +155,6 @@ print(f'VERIFICATION PASSED: dominant_pipe={d[\"dominant_pipe\"]}, primary_bound
 - Do NOT sum all pipes; the slowest pipe wins.
 - In the transition region, a small change can flip the bound.
 
-## For XPU
+## Vendor-specific details
 
-See the XPU-specific sub-skill for XVE counter names, pipe model, and peak slot rate.
+See the vendor sub-skill (e.g., `xpu/SKILL.md`) for device-specific counter names, pipe model, and peak slot rate.

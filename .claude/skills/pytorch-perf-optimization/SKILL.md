@@ -45,18 +45,19 @@ When the target device is on a remote machine, the orchestrator must build these
 
 ### `SSH_TARGET`
 
-The `user@host` string for the remote machine, e.g., `root@ai002.sh.intel.com`.
+The `user@host` string for the remote machine.
 
 ### `SSH_PASSWORD`
 
-The password (if using password auth), e.g., `intel@123`.
+The password (if using password auth).
 
 ### `ENV_SETUP`
 
 The chain of environment commands to run on the remote machine before any real command:
 
 ```bash
-ENV_SETUP="source /root/miniforge3/etc/profile.d/conda.sh && conda activate jianyi && source /opt/intel/oneapi/setvars.sh 2>/dev/null && export PATH=/root/common_tools/pti-gpu/tools/unitrace/build/:\$PATH"
+# Example (adapt to user's actual environment):
+ENV_SETUP="source ~/.bashrc && conda activate myenv && export PATH=/path/to/tools:\$PATH"
 ```
 
 ### Running commands remotely
@@ -109,7 +110,24 @@ sshpass -p '$SSH_PASSWORD' ssh -o StrictHostKeyChecking=no $SSH_TARGET "cat $RUN
 
 If the device is on the same machine, skip SSH and SCP. Write files directly to `$RUN_DIR`. Run commands directly. Sub-skills work identically either way.
 
-## Step 0 -- Create shared run directory
+## Step 0 -- Detect device and create shared run directory
+
+### 0a. Detect the current accelerator device
+
+Run this on the target machine to confirm the device type and name:
+
+```bash
+python -c "
+import torch
+dev = torch.accelerator.current_accelerator()
+print(f'device_type={dev.type}')
+print(f'device_name={torch.accelerator.device_name(0)}')
+"
+```
+
+Record `device_type` (e.g., `xpu`, `cuda`) and `device_name` (e.g., `Intel(R) Arc(TM) B580 Graphics`). These determine which vendor-specific sub-skills to load.
+
+### 0b. Create shared run directory
 
 1. Create `/tmp/opencode/` locally if it doesn't exist (for staging files before SCP).
 2. Create `$RUN_DIR` on the target machine:
@@ -258,7 +276,7 @@ Always run this step. It maps hot instructions back to source code using the dom
 3. **Gate -- verify:**
    ```bash
    sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/08_asm_source_mapping.json"
-   # Must contain: scenario, hot_source_locations, recommended_levers
+   # Must contain: scenario, hot_source_locations, parallelization_analysis
    ```
 
 ## Step 9 -- Final report
@@ -361,7 +379,7 @@ write files directly to $RUN_DIR.
 - T_mem (projected): <ms>
 - Measured DRAM BW: <GB/s>, utilization: <pct>
 - Read/write amplification: <values>
-- Dominant pipe: <FP | INT | SEND | ...>
+- Dominant pipe: <FP | INT | MEMORY | ...>
 - Dominant stall: <stall type>
 
 ### 3. Hotspot
@@ -378,6 +396,8 @@ write files directly to $RUN_DIR.
 
 ## Lever reference (for Step 9)
 
+This table is a starting point, not an exhaustive lookup. You MUST reason about the specific kernel's data layout, parallelization strategy, and which computations are shared across adjacent threads. The best optimization often comes from restructuring how work is distributed, not from micro-optimizing individual operations.
+
 | Dominant bound | Levers |
 |----------------|--------|
 | Host-bound | fuse, queue more work, remove sync, compile |
@@ -387,8 +407,8 @@ write files directly to $RUN_DIR.
 | Insufficient MLP | increase occupancy, vectorize loads, reduce dependent memory chains |
 | Uncoalesced access | improve coalescing, contiguous loads, d32 packing |
 | FP ALU | remove redundant FP, lower precision, native math |
-| INT/MATH ALU | vectorize indices, `IntDivider`, narrow 64-bit pointers, reparameterize grid |
-| Matrix/tensor | GEMM tile / tensor-core / DPAS tuning |
+| INT/MATH ALU | vectorize across shared-coordinate dim (amortize index math), `IntDivider`, narrow 64-bit pointers, reparameterize grid |
+| Matrix/tensor | GEMM tile / tensor-core / matrix-engine tuning |
 
 Note on load width: when DRAM utilization is already low (clean, coalesced traffic, `T_actual / T_mem > 1.4`), wider loads (e.g., `float4`) mainly reduce instruction count and amortize index math -- they do **not** increase peak DRAM bandwidth.
 

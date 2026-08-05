@@ -98,6 +98,6 @@ print('VERIFICATION PASSED')
 "
 ```
 
-## For XPU
+## Vendor-specific details
 
-See the XPU-specific sub-skill for Intel `unitrace` installation, oneAPI sourcing, and verification commands.
+See the vendor sub-skill (e.g., `xpu/SKILL.md`) for device-specific profiler installation and verification commands.

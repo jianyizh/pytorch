@@ -24,7 +24,7 @@ Read all prior JSON files.
 | Action | Where |
 |--------|-------|
 | Read prior step JSON files | REMOTE |
-| Query device name (`torch.xpu.get_device_name()`) | REMOTE |
+| Query device name (`torch.accelerator.device_name()`) | REMOTE |
 | Look up spec table / compute ridge point | LOCAL (arithmetic) |
 | Write step JSON/log to `$RUN_DIR` | REMOTE |
 | Verification | REMOTE |
@@ -40,7 +40,7 @@ Two dimensions must match the kernel:
 
 Priority for sourcing peak numbers:
 1. Vendor spec / datasheet
-2. On-device query (clock, XVE count, bus width)
+2. On-device query (clock, compute-unit count, memory bus width)
 3. Micro-benchmark for achievable peak (preferred when vendor numbers are optimistic)
 
 ### 2. Convert to base units
@@ -117,6 +117,6 @@ print(f'VERIFICATION PASSED: {d[\"bound_type\"]}, theory={d[\"time_theory_ms\"]:
 "
 ```
 
-## For XPU
+## Vendor-specific details
 
-See the XPU-specific sub-skill for B580 peak number tables and measurement methods.
+See the vendor sub-skill (e.g., `xpu/SKILL.md`) for device-specific peak number tables and measurement methods.

@@ -32,18 +32,22 @@ Read and parse both JSON files first.
 
 ### 1. Collect raw counter logs
 
-Run the profiler with each required metric group. **Save raw output to files in $RUN_DIR first, then parse from those files.**
+Run the vendor profiler with each required metric group. **Save raw output to files in $RUN_DIR first, then parse from those files.**
 
-For each metric group:
+The exact command syntax depends on the vendor tool (see the vendor sub-skill for commands). The generic pattern is:
+
 ```bash
-<profiler> <flags> -g <GroupName> python $RUN_DIR/bench_<op>.py profile > $RUN_DIR/<group_name>_raw.log 2>&1
+<vendor_profiler_command> python $RUN_DIR/bench_<op>.py warmup_profile > $RUN_DIR/<group_name>_raw.log 2>&1
 ```
 
-Typical groups to collect:
-- Basic compute/memory counters (timing, DRAM bytes, cache)
-- Per-pipe instruction counters (ALU0, ALU1, SEND, etc.)
-- Stall breakdown counters
-- Stall sampling (per-IP samples)
+Collect these categories of counters (vendor-specific names vary):
+
+| Category | What it measures | Example metrics |
+|----------|-----------------|-----------------|
+| Timing + memory traffic | Kernel duration, DRAM bytes read/written, cache stats | Vendor-specific |
+| Per-pipe instructions | Dynamic instruction/slot counts per execution pipe | Vendor-specific |
+| Stall breakdown | Stall reasons (memory dependency, pipe conflict, etc.) | Vendor-specific |
+| Stall sampling (optional) | Per-instruction-address stall samples | Vendor-specific |
 
 ### 2. Parse each log
 
@@ -71,24 +75,24 @@ Write parsed data as JSON files in `$RUN_DIR/`.
   "step": "03_kernel_profiler_parser",
   "dominant_kernel_name": "<kernel_name>",
   "raw_log_files": {
-    "ComputeBasic": "$RUN_DIR/compute_basic_raw.log",
-    "VectorEngineProfile": "$RUN_DIR/ve_profile_raw.log",
-    "VectorEngineStalls": "$RUN_DIR/ve_stalls_raw.log"
+    "<group_1>": "$RUN_DIR/<group_1>_raw.log",
+    "<group_2>": "$RUN_DIR/<group_2>_raw.log"
   },
   "parsed_counter_files": {
-    "ComputeBasic": "$RUN_DIR/compute_basic_parsed.json",
-    "VectorEngineProfile": "$RUN_DIR/ve_profile_parsed.json",
-    "VectorEngineStalls": "$RUN_DIR/ve_stalls_parsed.json"
+    "<group_1>": "$RUN_DIR/<group_1>_parsed.json",
+    "<group_2>": "$RUN_DIR/<group_2>_parsed.json"
   },
   "median_gpu_time_ns": <float>,
   "summary": {
-    "GpuTime_ns": <float>,
-    "GPU_MEMORY_BYTE_READ": <int>,
-    "GPU_MEMORY_BYTE_WRITE": <int>
+    "gpu_time_ns": <float>,
+    "dram_read_bytes": <int>,
+    "dram_write_bytes": <int>
   },
   "run_dir": "<$RUN_DIR>"
 }
 ```
+
+The `raw_log_files` and `parsed_counter_files` keys are vendor-specific group names (e.g., `ComputeBasic` on XPU, or `memory_throughput` on CUDA). The `summary` uses generic field names that all vendors must normalize to.
 
 ### `$RUN_DIR/03_kernel_profiler_parser.log`
 
@@ -96,11 +100,11 @@ Human-readable summary of parsed data.
 
 ### Raw log files
 
-All raw profiler logs saved in `$RUN_DIR/` (e.g., `compute_basic_raw.log`).
+All raw profiler logs saved in `$RUN_DIR/` (named by metric group).
 
 ### Parsed JSON files
 
-Per-group parsed data in `$RUN_DIR/` (e.g., `compute_basic_parsed.json`).
+Per-group parsed data in `$RUN_DIR/` (named by metric group).
 
 ## VERIFICATION
 
@@ -122,6 +126,6 @@ print('VERIFICATION PASSED')
 "
 ```
 
-## For XPU
+## Vendor-specific details
 
-See the XPU-specific sub-skill for unitrace metric groups and the right-to-left CSV parsing technique.
+See the vendor sub-skill (e.g., `xpu/SKILL.md`) for vendor-specific metric groups and log parsing techniques.

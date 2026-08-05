@@ -29,7 +29,7 @@ Read ALL prior JSON files.
 | Read prior step JSON files | REMOTE |
 | Read kernel source code (`.cpp`/`.h` files) | LOCAL (PyTorch source tree) |
 | Grep for kernel name in source tree | LOCAL |
-| Dump ISA / run `ocloc disasm` (if needed) | REMOTE |
+| Dump GPU assembly / disassemble (if needed) | REMOTE |
 | Parse stall-sampling IP data | REMOTE |
 | Write step JSON/log to `$RUN_DIR` | REMOTE |
 | Verification | REMOTE |
@@ -42,14 +42,14 @@ The dominant kernel name was identified in Step 2. Use it directly; do not re-pr
 
 ### 2. Classify the codegen path
 
-| Kernel signal | Path |
-|---------------|------|
-| `gemm_kernel` / `gen_conv_kernel` / `mkldnn::*` | oneDNN ngen |
-| `triton_*` / `triton_per_fused_*` | Triton through IGC |
-| `_ZTS...` AND Compiled = AOT | SYCL AOT |
-| `_ZTS...` AND Compiled = JIT | SYCL JIT |
+Determine how the kernel was compiled. The classification depends on the vendor and framework. See the vendor sub-skill for the specific kernel-name-to-path mapping table.
 
-Use the `kernel_properties.compiled` field from Step 2 JSON.
+General patterns:
+- **Vendor math library kernel** (e.g., oneDNN, cuDNN, MIOpen): typically no source-level debug info; analysis is pattern-based.
+- **Triton kernel** (`triton_*`): compiled through a vendor backend; assembly dump may be available via env vars.
+- **Framework-native kernel** (ATen CUDA/SYCL/HIP): may have debug line tables if built with `-g`.
+
+Use the kernel name and any `compiled` property from Step 2 to determine which category applies.
 
 ### 3. Inspect the kernel source code
 
@@ -61,28 +61,38 @@ Using the `kernel_source_file` from Step 2 (or by grepping the source tree), rea
 
 ### 4. Map hot pipe/stall to source patterns
 
-Using the dominant pipe and stall breakdown from Step 7:
+Using the dominant pipe and stall breakdown from Step 7, identify which source-level patterns generate the hot instructions:
 
-| Hot pattern | Likely source-level cause | Lever |
-|-------------|--------------------------|-------|
-| INT div/mod in inner loop | Index decomposition from linear index | IntDivider, reparameterize grid, vectorize |
-| 64-bit pointer arithmetic | 64-bit indices where not needed | Narrow to 32-bit |
-| Many FP math ops | Redundant elementwise math | Remove redundancy, lower precision |
-| Uncoalesced/scattered loads | Bad memory access pattern | Improve locality, pack, tile |
-| Branches clustered | Divergent control flow | Predicate, unify branches |
+| Hot pattern | Likely source-level cause |
+|-------------|--------------------------|
+| INT div/mod in inner loop | Index decomposition from linear index (non-power-of-2 divisors) |
+| 64-bit pointer arithmetic | 64-bit indices or pointer math where element count < 2^31 |
+| Many FP math ops | Redundant elementwise math, higher precision than needed |
+| Uncoalesced/scattered loads | Strided or random memory access pattern |
+| Branches clustered | Divergent control flow across threads |
 
-### 5. Optionally extract and disassemble ISA
+### 4a. Analyze the parallelization-vs-layout relationship
 
-If source-level inspection is insufficient, dump the GPU ISA:
-- On XPU: use `IGC_ShaderDumpEnable=1` or `DumpZEBin=1` + `ocloc disasm`
-- On NVIDIA: compile with `-lineinfo`, use `cuobjdump -sass`
-- On AMD: `llvm-objdump -l`
+After identifying hot patterns, think critically about **why** this work exists relative to the data layout and parallelization strategy. Ask:
+
+- How is work distributed across threads? (1D linear index? Per-element? Per-spatial-position?)
+- Which dimensions of the output does each thread iterate over vs. which are implicit in its ID?
+- Do adjacent threads compute identical intermediate values (e.g., same spatial coordinates, same index decomposition results)?
+- If so, can multiple outputs be produced per thread, amortizing the shared computation?
+
+This analysis is critical for INT-bound kernels where index decomposition dominates. The fix is often not to make divisions cheaper, but to do fewer of them by restructuring which work each thread does.
+
+**Do NOT prescribe optimization levers here.** Your job in this step is to produce a complete, accurate picture of what the hot code does and why. The orchestrator synthesizes levers in Step 9 using this mapping plus all prior measurement data.
+
+### 5. Optionally extract and disassemble GPU assembly
+
+If source-level inspection is insufficient, dump the GPU assembly using the vendor-specific method. See the vendor sub-skill for exact commands (e.g., `xpu/SKILL.md` for Intel, etc.).
 
 ### 6. Correlate stall-sampling IPs (if available)
 
 If `--stall-sampling` data was collected:
 1. Aggregate stall events by IP for the hot kernel.
-2. Look up each IP in the ISA dump from step 5.
+2. Look up each IP in the assembly dump from step 5.
 3. Focus on the loop/instruction accumulating the most samples.
 
 ## REQUIRED OUTPUTS
@@ -93,13 +103,13 @@ If `--stall-sampling` data was collected:
 {
   "step": "08_asm_source_mapping",
   "dominant_kernel_name": "<kernel_name>",
-  "scenario": "<onednn|triton|sycl-aot|sycl-jit>",
+  "scenario": "<vendor-library|triton|framework-native|unknown>",
   "kernel_source_file": "<file:line>",
   "hot_source_locations": ["<file:line description>"],
   "hot_patterns_found": ["<pattern description>"],
-  "recommended_levers": ["<lever 1>", "<lever 2>"],
+  "parallelization_analysis": "<description of how work is distributed and what adjacent threads share>",
   "mapping_confidence": "<high|medium|low>",
-  "asm_file": "<path to ISA dump or null>",
+  "asm_file": "<path to assembly dump or null>",
   "run_dir": "<$RUN_DIR>"
 }
 ```
@@ -118,7 +128,7 @@ test -f $RUN_DIR/08_asm_source_mapping.log && echo "LOG OK" || echo "LOG MISSING
 python3 -c "
 import json
 d = json.load(open('$RUN_DIR/08_asm_source_mapping.json'))
-required = ['scenario', 'hot_source_locations', 'recommended_levers', 'mapping_confidence']
+required = ['scenario', 'hot_source_locations', 'hot_patterns_found', 'parallelization_analysis', 'mapping_confidence']
 missing = [k for k in required if k not in d]
 assert not missing, f'Missing fields: {missing}'
 print(f'VERIFICATION PASSED: scenario={d[\"scenario\"]}, confidence={d[\"mapping_confidence\"]}')

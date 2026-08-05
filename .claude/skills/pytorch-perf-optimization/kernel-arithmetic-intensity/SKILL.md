@@ -125,6 +125,6 @@ print(f'VERIFICATION PASSED: AI={d[\"AI\"]:.2f} FLOP/Byte, path={d[\"compute_pat
 "
 ```
 
-## For XPU
+## Vendor-specific details
 
-See the XPU-specific sub-skill for dtype/compute_path notes on Xe matrix vs vector engines.
+See the vendor sub-skill (e.g., `xpu/SKILL.md`) for device-specific dtype/compute_path guidance.
