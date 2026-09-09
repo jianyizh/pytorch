@@ -39,7 +39,7 @@ ocloc disasm -file <zebin_path> -dump /tmp/isa_dump
 
 ## Source mapping methods (priority order)
 
-1. **Source code inspection**: Read the kernel source file identified in Step 2. Match patterns in the source to the pipe/stall breakdown from Step 7. This is often sufficient for PyTorch native kernels.
+1. **Source code inspection**: Read the kernel source file identified in Step 2. Match patterns in the source to the pipe/stall breakdown from Step 9. This is often sufficient for PyTorch native kernels.
 
 2. **Zebin .debug_line**: For AOT/JIT zebin ELFs compiled with `-g`, use standard DWARF line tables.
 
@@ -54,8 +54,11 @@ If stall-sampling data was collected in Step 3:
 1. Parse the stall-sampling raw log for the dominant kernel.
 2. Aggregate stall events by `IP[Address]`.
 3. Map the top IPs to assembly instructions in the ISA dump.
-4. Map assembly back to source using the method above.
-5. Focus on the hottest loop.
+4. For each hot IP, interpret its stall type(s) using the per-IP reference
+   in `stall-sampling.md` (this directory) - it explains, at instruction
+   granularity, why that instruction stalls and how it maps back to source.
+5. Map assembly back to source using the method above.
+6. Focus on the hottest loop.
 
 ## Common hot patterns on XPU
 

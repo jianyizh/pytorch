@@ -148,18 +148,25 @@ Record `median_t_op_us` from the output.
 
 ### 3. Profile to get t_dev and kernel names
 
-Run in `profile` mode to use `torch.profiler`:
+Measure the device (GPU) time with the **vendor profiler**, not torch.profiler: torch.profiler's
+per-activity device time is not the authoritative on-device kernel duration, and including host
+sync / launch time inflates it. Use the vendor profiler's device-timeline mode (e.g. `unitrace -d`
+on XPU -- see the vendor sub-skill for the exact command). This gives a clean per-kernel device
+time you can divide wall time by.
+
+Optionally cross-check kernel names with torch.profiler `profile` mode (the kernel name table is
+convenient), but do not source `t_dev` from `self_device_time_us`.
 
 ```bash
-python $RUN_DIR/bench_<op>.py profile > $RUN_DIR/torch_profiler_output.log 2>&1
+# Generic pattern; exact invocation per vendor sub-skill (e.g. unitrace -d on XPU)
+<vendor_profiler -d> python $RUN_DIR/bench_<op>.py profile > $RUN_DIR/vendor_timeline.log 2>&1
 ```
 
-Parse the output:
-1. Find the `===PROFILE_JSON===` marker.
-2. Parse the JSON array of kernel events.
-3. The top kernel by `self_device_time_us` is the dominant kernel.
-4. Compute `t_dev` = dominant kernel's `avg_device_time_us` (or sum if multiple kernels per op call).
-5. Skip warmup: torch.profiler already handles this via the context manager scope.
+Parse the vendor timeline:
+1. Locate the device Timing Summary / per-kernel device-time table.
+2. Take the dominant kernel's device time as `t_dev` (average over the profiled calls; `min`
+   is closest to steady-state).
+3. If multiple kernels belong to one op call, sum them.
 
 ### 4. Compute U and classify
 

@@ -14,10 +14,10 @@ description: Device-agnostic workflow for mapping hot GPU assembly or stall/samp
 | `$RUN_DIR/01_kernel_profiler_setup.json` | Step 1 | vendor_tool |
 | `$RUN_DIR/02_host_vs_device_bound.json` | Step 2 | dominant_kernel_name, kernel_source_file |
 | `$RUN_DIR/03_kernel_profiler_parser.json` | Step 3 | raw logs |
-| `$RUN_DIR/04_kernel_arithmetic_intensity.json` | Step 4 | op context |
-| `$RUN_DIR/05_kernel_memory_compute_bound.json` | Step 5 | bound_type |
-| `$RUN_DIR/06_memory_load_store.json` | Step 6 | memory metrics |
-| `$RUN_DIR/07_instructions_measurement.json` | Step 7 | dominant_pipe, stall_breakdown |
+| `$RUN_DIR/06_kernel_arithmetic_intensity.json` | Step 6 | op context |
+| `$RUN_DIR/07_kernel_memory_compute_bound.json` | Step 7 | bound_type |
+| `$RUN_DIR/08_memory_load_store.json` | Step 8 | memory metrics |
+| `$RUN_DIR/09_instructions_measurement.json` | Step 9 | dominant_pipe, stall_breakdown |
 | PyTorch source tree | Local repo | For source file inspection |
 
 Read ALL prior JSON files.
@@ -61,7 +61,7 @@ Using the `kernel_source_file` from Step 2 (or by grepping the source tree), rea
 
 ### 4. Map hot pipe/stall to source patterns
 
-Using the dominant pipe and stall breakdown from Step 7, identify which source-level patterns generate the hot instructions:
+Using the dominant pipe and stall breakdown from Step 9, identify which source-level patterns generate the hot instructions:
 
 | Hot pattern | Likely source-level cause |
 |-------------|--------------------------|
@@ -82,7 +82,7 @@ After identifying hot patterns, think critically about **why** this work exists 
 
 This analysis is critical for INT-bound kernels where index decomposition dominates. The fix is often not to make divisions cheaper, but to do fewer of them by restructuring which work each thread does.
 
-**Do NOT prescribe optimization levers here.** Your job in this step is to produce a complete, accurate picture of what the hot code does and why. The orchestrator synthesizes levers in Step 9 using this mapping plus all prior measurement data.
+**Do NOT prescribe optimization levers here.** Your job in this step is to produce a complete, accurate picture of what the hot code does and why. The orchestrator synthesizes levers in Step 11 using this mapping plus all prior measurement data.
 
 ### 5. Optionally extract and disassemble GPU assembly
 
@@ -97,11 +97,11 @@ If `--stall-sampling` data was collected:
 
 ## REQUIRED OUTPUTS
 
-### `$RUN_DIR/08_asm_source_mapping.json`
+### `$RUN_DIR/10_asm_source_mapping.json`
 
 ```json
 {
-  "step": "08_asm_source_mapping",
+  "step": "10_asm_source_mapping",
   "dominant_kernel_name": "<kernel_name>",
   "scenario": "<vendor-library|triton|framework-native|unknown>",
   "kernel_source_file": "<file:line>",
@@ -114,7 +114,7 @@ If `--stall-sampling` data was collected:
 }
 ```
 
-### `$RUN_DIR/08_asm_source_mapping.log`
+### `$RUN_DIR/10_asm_source_mapping.log`
 
 Human-readable source mapping report with the kernel source code excerpts showing the hot patterns.
 
@@ -123,11 +123,11 @@ Human-readable source mapping report with the kernel source code excerpts showin
 **Run all verification commands via SSH on the target machine (they access `$RUN_DIR` which is remote). Write any output files locally to `/tmp/opencode/` first, then SCP to `$RUN_DIR`.**
 
 ```bash
-test -f $RUN_DIR/08_asm_source_mapping.json && echo "JSON OK" || echo "JSON MISSING"
-test -f $RUN_DIR/08_asm_source_mapping.log && echo "LOG OK" || echo "LOG MISSING"
+test -f $RUN_DIR/10_asm_source_mapping.json && echo "JSON OK" || echo "JSON MISSING"
+test -f $RUN_DIR/10_asm_source_mapping.log && echo "LOG OK" || echo "LOG MISSING"
 python3 -c "
 import json
-d = json.load(open('$RUN_DIR/08_asm_source_mapping.json'))
+d = json.load(open('$RUN_DIR/10_asm_source_mapping.json'))
 required = ['scenario', 'hot_source_locations', 'hot_patterns_found', 'parallelization_analysis', 'mapping_confidence']
 missing = [k for k in required if k not in d]
 assert not missing, f'Missing fields: {missing}'

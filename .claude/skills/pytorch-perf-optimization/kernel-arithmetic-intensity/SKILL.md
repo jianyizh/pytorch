@@ -84,11 +84,11 @@ AI = Total_FLOPs / Total_Bytes   [FLOP/Byte]
 
 ## REQUIRED OUTPUTS
 
-### `$RUN_DIR/04_kernel_arithmetic_intensity.json`
+### `$RUN_DIR/06_kernel_arithmetic_intensity.json`
 
 ```json
 {
-  "step": "04_kernel_arithmetic_intensity",
+  "step": "06_kernel_arithmetic_intensity",
   "op": "<op_name>",
   "shapes_summary": "<concise shape description>",
   "dtype": "<dtype>",
@@ -103,7 +103,7 @@ AI = Total_FLOPs / Total_Bytes   [FLOP/Byte]
 }
 ```
 
-### `$RUN_DIR/04_kernel_arithmetic_intensity.log`
+### `$RUN_DIR/06_kernel_arithmetic_intensity.log`
 
 Human-readable report with full calculation breakdown.
 
@@ -112,10 +112,10 @@ Human-readable report with full calculation breakdown.
 **Run all verification commands via SSH on the target machine (they access `$RUN_DIR` which is remote). Write any output files locally to `/tmp/opencode/` first, then SCP to `$RUN_DIR`.**
 
 ```bash
-test -f $RUN_DIR/04_kernel_arithmetic_intensity.json && echo "JSON OK" || echo "JSON MISSING"
+test -f $RUN_DIR/06_kernel_arithmetic_intensity.json && echo "JSON OK" || echo "JSON MISSING"
 python3 -c "
 import json
-d = json.load(open('$RUN_DIR/04_kernel_arithmetic_intensity.json'))
+d = json.load(open('$RUN_DIR/06_kernel_arithmetic_intensity.json'))
 required = ['total_flops', 'total_bytes', 'AI', 'compute_path']
 missing = [k for k in required if k not in d]
 assert not missing, f'Missing fields: {missing}'

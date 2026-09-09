@@ -175,7 +175,7 @@ Record the `RUN_DIR` path from the output. All downstream steps use this exact p
    # Must contain: t_op_us, t_dev_us, U, classification, dominant_kernel_name
    ```
 4. Read the JSON. **Branch:**
-   - `classification == "Host Bound"` --> skip to Step 9 with host-bound levers.
+   - `classification == "Host Bound"` --> skip to Step 11 with host-bound levers.
    - `classification == "Device Bound"` or `"Mixed"` --> continue to Step 3.
 
 ## Step 3 -- kernel-profiler-parser
@@ -195,97 +195,137 @@ Record the `RUN_DIR` path from the output. All downstream steps use this exact p
    ```
 4. Read the JSON and carry forward.
 
-## Step 4 -- kernel-arithmetic-intensity
+## Step 4 -- kernel-occupancy
+
+**This step MUST run after Step 3** (it needs the launch parameters captured in Step 1's timeline log) and BEFORE Step 5 (register spill/bank conflict). Occupancy explains whether the kernel fills the device's thread-context resources; AI/Roofline gives the theoretical bound.
+
+1. **Load the sub-skill:**
+   - Read `.claude/skills/pytorch-perf-optimization/kernel-occupancy/SKILL.md`
+   - If device is XPU, also read `.claude/skills/pytorch-perf-optimization/kernel-occupancy/xpu/SKILL.md`
+2. **Launch sub-agent** with:
+   - The sub-skill content
+   - ALL previous step JSON results (Steps 1-3)
+   - Op config (op_name, shapes, dtype)
+   - The dominant kernel name from Step 3
+3. **Gate -- verify:**
+   ```bash
+   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/04_kernel_occupancy.json"
+   # Must contain: launch_params (workgroup_size, subgroup_size, smem_per_workgroup_bytes),
+   #   occupancy (0..1), classification
+   ```
+4. Read the JSON and carry it forward (occupancy informs the lever selection in Step 11).
+
+## Step 5 -- register-spill-bank-conflict
+
+**This step MUST run after Step 4** (it needs registers/large-GRF/spill from Step 4) and BEFORE Step 6 (arithmetic intensity). It checks register-file pressure: spilling to local memory, and read-port bank/bundle conflicts.
+
+1. **Load the sub-skill:**
+   - Read `.claude/skills/pytorch-perf-optimization/register-spill-bank-conflict/SKILL.md`
+   - If device is XPU, also read `.claude/skills/pytorch-perf-optimization/register-spill-bank-conflict/xpu/SKILL.md`
+2. **Launch sub-agent** with:
+   - The sub-skill content
+   - ALL previous step JSON results (Steps 1-4)
+   - Op config (op_name, shapes, dtype)
+   - `RUN_DIR` path and SSH credentials
+   - Path to the local PyTorch source tree for kernel source inspection
+3. **Gate -- verify:**
+   ```bash
+   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/05_register_bank_conflict.json"
+   # Must contain: launch_params (registers_per_thread), spill_analysis, conflict_analysis
+   ```
+4. Read the JSON and carry it forward (spills/conflicts inform lever selection in Step 11).
+
+## Step 6 -- kernel-arithmetic-intensity
 
 1. **Load the sub-skill:**
    - Read `.claude/skills/pytorch-perf-optimization/kernel-arithmetic-intensity/SKILL.md`
    - If device is XPU, also read `.claude/skills/pytorch-perf-optimization/kernel-arithmetic-intensity/xpu/SKILL.md`
 2. **Launch sub-agent** with:
    - The sub-skill content
-   - ALL previous step JSON results (Steps 1-3)
+   - ALL previous step JSON results (Steps 1-5)
    - Op config (op_name, shapes, dtype)
    - `RUN_DIR` path and SSH credentials
    - Path to the local PyTorch source tree for kernel source inspection
 3. **Gate -- verify:**
    ```bash
-   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/04_kernel_arithmetic_intensity.json"
+   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/06_kernel_arithmetic_intensity.json"
    # Must contain: total_flops, total_bytes, AI, compute_path
    ```
 
-## Step 5 -- kernel-memory-compute-bound
+## Step 7 -- kernel-memory-compute-bound
 
 1. **Load the sub-skill:**
    - Read `.claude/skills/pytorch-perf-optimization/kernel-memory-compute-bound/SKILL.md`
    - If device is XPU, also read `.claude/skills/pytorch-perf-optimization/kernel-memory-compute-bound/xpu/SKILL.md`
 2. **Launch sub-agent** with:
    - The sub-skill content
-   - ALL previous step JSON results (Steps 1-4)
+   - ALL previous step JSON results (Steps 1-6)
    - `RUN_DIR` path and SSH credentials
 3. **Gate -- verify:**
    ```bash
-   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/05_kernel_memory_compute_bound.json"
+   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/07_kernel_memory_compute_bound.json"
    # Must contain: bound_type, ridge_point, time_theory_ms, time_compute_ms, time_memory_ms
    ```
 
-## Step 6 -- memory-load-store-measurement
+## Step 8 -- memory-load-store-measurement
 
 1. **Load the sub-skill:**
    - Read `.claude/skills/pytorch-perf-optimization/memory-load-store-measurement/SKILL.md`
    - If device is XPU, also read `.claude/skills/pytorch-perf-optimization/memory-load-store-measurement/xpu/SKILL.md`
 2. **Launch sub-agent** with:
    - The sub-skill content
-   - ALL previous step JSON results (Steps 1-5)
+   - ALL previous step JSON results (Steps 1-7)
    - `RUN_DIR` path and SSH credentials
 3. **Gate -- verify:**
    ```bash
-   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/06_memory_load_store.json"
+   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/08_memory_load_store.json"
    # Must contain: measured_read_bytes, measured_write_bytes, dram_total_bw_gbps,
    #   bw_utilization, read_amplification, write_amplification, T_mem_ms, peak_bw_gbps
    ```
 
-## Step 7 -- instructions-measurement
+## Step 9 -- instructions-measurement
 
-**This step MUST run after Step 6** (it needs T_mem from Step 6 for comparison).
+**This step MUST run after Step 8** (it needs T_mem from Step 8 for comparison).
 
 1. **Load the sub-skill:**
    - Read `.claude/skills/pytorch-perf-optimization/instructions-measurement/SKILL.md`
    - If device is XPU, also read `.claude/skills/pytorch-perf-optimization/instructions-measurement/xpu/SKILL.md`
 2. **Launch sub-agent** with:
    - The sub-skill content
-   - ALL previous step JSON results (Steps 1-6)
+   - ALL previous step JSON results (Steps 1-8)
    - `RUN_DIR` path and SSH credentials
 3. **Gate -- verify:**
    ```bash
-   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/07_instructions_measurement.json"
+   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/09_instructions_measurement.json"
    # Must contain: T_instruction_ms, dominant_pipe, per_pipe, T_mem_ms, primary_bound
    ```
 
-## Step 8 -- asm-source-mapping
+## Step 10 -- asm-source-mapping
 
-Always run this step. It maps hot instructions back to source code using the dominant pipe and stall info from Steps 6/7.
+Always run this step. It maps hot instructions back to source code using the dominant pipe and stall info from Steps 8/9.
 
 1. **Load the sub-skill:**
    - Read `.claude/skills/pytorch-perf-optimization/asm-source-mapping/SKILL.md`
    - If device is XPU, also read `.claude/skills/pytorch-perf-optimization/asm-source-mapping/xpu/SKILL.md`
 2. **Launch sub-agent** with:
    - The sub-skill content
-   - ALL previous step JSON results (Steps 1-7)
+   - ALL previous step JSON results (Steps 1-9)
    - `RUN_DIR` path and SSH credentials
    - Path to the local PyTorch source tree
-   - The dominant pipe and stall info from Steps 6/7
+   - The dominant pipe and stall info from Steps 8/9
 3. **Gate -- verify:**
    ```bash
-   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/08_asm_source_mapping.json"
+   sshpass -p '$SSH_PASSWORD' ssh $SSH_TARGET "cat $RUN_DIR/10_asm_source_mapping.json"
    # Must contain: scenario, hot_source_locations, parallelization_analysis
    ```
 
-## Step 9 -- Final report
+## Step 11 -- Final report
 
 This step does NOT use a sub-skill file. You (the orchestrator) produce the final report directly.
 
-1. Read ALL step JSON files from `$RUN_DIR` (01, 02, 03, 04, 05, 06, 07, 08).
+1. Read ALL step JSON files from `$RUN_DIR` (01, 02, 03, 04, 05, 06, 07, 08, 09, 10).
 2. Produce the report using the output template below.
-3. Save the report to `$RUN_DIR/09_final_report.md`.
+3. Save the report to `$RUN_DIR/11_final_report.md`.
 
 ## Sub-agent prompt template
 
@@ -364,13 +404,14 @@ write files directly to $RUN_DIR.
 4. Return a summary of your findings including key numeric results.
 ```
 
-## Output template (Step 9)
+## Output template (Step 11)
 
 ```
 ## Performance Optimization Report -- <op_name> on <device>
 
 ### 1. Bound classification
 - Host / Device: <U value and classification>
+- Occupancy: <value>, classification (Good/Moderate/Low)
 - AI: <value> FLOP/Byte (compute_path=<matrix|vector>)
 - Roofline: <Memory-Bound | Compute-Bound> (time_theory = <ms>)
 - Measured: <ms>
@@ -394,13 +435,16 @@ write files directly to $RUN_DIR.
 <exact command to re-run after applying levers>
 ```
 
-## Lever reference (for Step 9)
+## Lever reference (for Step 11)
 
 This table is a starting point, not an exhaustive lookup. You MUST reason about the specific kernel's data layout, parallelization strategy, and which computations are shared across adjacent threads. The best optimization often comes from restructuring how work is distributed, not from micro-optimizing individual operations.
 
 | Dominant bound | Levers |
 |----------------|--------|
 | Host-bound | fuse, queue more work, remove sync, compile |
+| Low occupancy | increase WG size to a power-of-two multiple of subgroup size (<=32 subgroups/WG), reduce register usage / disable large-GRF, reduce SLM per WG, add more independent work |
+| Register spill | reduce live register pressure (smaller WG, less unrolling, fewer simultaneous accumulators), split loops, enable large-GRF if it avoids spills at acceptable occupancy cost |
+| Bank/bundle conflict | enable `EnableBCR` / `EnableGroupScheduleForBC`, retarget register allocation, split 3-source ALU patterns (`add3`, `bfn`) back to 2-source, better scheduling / read-suppression awareness |
 | DRAM bandwidth | reduce precision, tiling, eliminate temporaries |
 | Traffic amplification | improve coalescing, contiguous loads, d32 packing |
 | Poor compute-memory overlap | increase occupancy, prefetch, reduce dependent chains, expose more independent work |

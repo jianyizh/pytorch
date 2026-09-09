@@ -100,8 +100,9 @@ unitrace -q -i 20 -g VectorEngineStalls  ./bench > ve_stalls.log
 # Stall sampling (per IP)
 unitrace --stall-sampling -i 20 ./bench > stalls.log
 
-# Device timeline
-unitrace -d ./bench
+# Device timeline (use -v to capture launch parameters: work-group size, subgroup
+# size, register usage, SLM usage -- required for the occupancy step)
+unitrace -d -v ./bench
 ```
 
 ## Cautions

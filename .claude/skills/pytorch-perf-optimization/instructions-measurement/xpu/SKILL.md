@@ -59,17 +59,26 @@ T_instruction = max(T_alu0, T_alu1, T_dpas, T_send)
 
 ## VectorEngineStalls counters
 
-From the VectorEngineStalls raw log (collected in Step 3):
+From the VectorEngineStalls raw log (collected in Step 3). These are **aggregate** percentages
+of stall time over the whole kernel. They are NOT directly comparable to per-IP stall-sampling
+counts (Step 3 / asm-source-mapping).
 
-| Counter | Meaning |
-|---------|---------|
-| `XVE_STALL_ALUWR` | ALU write-back dependency |
-| `XVE_STALL_SBID` | Scoreboard: waiting on in-flight memory |
-| `XVE_STALL_PIPESTALL` | Pipe conflict (pipe is busy) |
-| `XVE_STALL_INSTFETCH` | Instruction cache miss |
-| `XVE_STALL_CONTROL` | Control flow stall |
-| `XVE_STALL_BARRIER` | Barrier synchronization |
-| `XVE_STALL_SENDWR` | SEND write-back conflict |
+| Counter | Meaning | Sampling-column equivalent |
+|---------|---------|----------------------------|
+| `XVE_STALL_ALUWR` | ALU write-back / producer-consumer dependency distance | `DistStall` |
+| `XVE_STALL_SBID` | Scoreboard: waiting on in-flight memory | `SbidStall` |
+| `XVE_STALL_PIPESTALL` | Pipe conflict (pipe is busy) | `PipeStall` |
+| `XVE_STALL_INSTFETCH` | Instruction cache miss / fetch wait | `InstrFetchStall` |
+| `XVE_STALL_CONTROL` | Control flow stall (branch resolution) | `ControlStall` |
+| `XVE_STALL_BARRIER` | Barrier synchronization | `BarrierStall` |
+| `XVE_STALL_SENDWR` | SEND write-back conflict | `SendStall` |
+
+Notes on names:
+- `DistStall` (sampling) is the same physical stall as `XVE_STALL_ALUWR` (aggregate): a data
+  dependency / ALU write-back distance. It is NOT a branch-distance or control-flow stall.
+- Use these aggregate percentages to see *how much* of each stall across the kernel, and the
+  per-IP sampling (asm-source-mapping/xpu/stall-sampling.md) to see *which instruction address*
+  each stall comes from. Do not compare their raw values directly.
 
 ## Typical levers
 

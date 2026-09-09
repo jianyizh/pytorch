@@ -14,7 +14,7 @@ description: Classify a device-bound kernel as memory-bound or compute-bound usi
 | `$RUN_DIR/01_kernel_profiler_setup.json` | Step 1 | run_dir |
 | `$RUN_DIR/02_host_vs_device_bound.json` | Step 2 | t_op_us, t_dev_us, dominant_kernel_name |
 | `$RUN_DIR/03_kernel_profiler_parser.json` | Step 3 | median_gpu_time_ns |
-| `$RUN_DIR/04_kernel_arithmetic_intensity.json` | Step 4 | total_flops, total_bytes, AI, compute_path |
+| `$RUN_DIR/06_kernel_arithmetic_intensity.json` | Step 6 | total_flops, total_bytes, AI, compute_path |
 | Device peak numbers | Spec table or measurement | Peak FLOPS (path/dtype-matched), peak memory BW |
 
 Read all prior JSON files.
@@ -71,11 +71,11 @@ near_ridge = 0.5 <= (AI / ridge) <= 2.0
 
 ## REQUIRED OUTPUTS
 
-### `$RUN_DIR/05_kernel_memory_compute_bound.json`
+### `$RUN_DIR/07_kernel_memory_compute_bound.json`
 
 ```json
 {
-  "step": "05_kernel_memory_compute_bound",
+  "step": "07_kernel_memory_compute_bound",
   "device_name": "<device>",
   "compute_path": "<matrix|vector>",
   "dtype": "<dtype>",
@@ -96,7 +96,7 @@ near_ridge = 0.5 <= (AI / ridge) <= 2.0
 }
 ```
 
-### `$RUN_DIR/05_kernel_memory_compute_bound.log`
+### `$RUN_DIR/07_kernel_memory_compute_bound.log`
 
 Human-readable Roofline report.
 
@@ -105,10 +105,10 @@ Human-readable Roofline report.
 **Run all verification commands via SSH on the target machine (they access `$RUN_DIR` which is remote). Write any output files locally to `/tmp/opencode/` first, then SCP to `$RUN_DIR`.**
 
 ```bash
-test -f $RUN_DIR/05_kernel_memory_compute_bound.json && echo "JSON OK" || echo "JSON MISSING"
+test -f $RUN_DIR/07_kernel_memory_compute_bound.json && echo "JSON OK" || echo "JSON MISSING"
 python3 -c "
 import json
-d = json.load(open('$RUN_DIR/05_kernel_memory_compute_bound.json'))
+d = json.load(open('$RUN_DIR/07_kernel_memory_compute_bound.json'))
 required = ['bound_type', 'ridge_point', 'time_theory_ms', 'peak_flops_tflops', 'peak_bw_gbps']
 missing = [k for k in required if k not in d]
 assert not missing, f'Missing fields: {missing}'
