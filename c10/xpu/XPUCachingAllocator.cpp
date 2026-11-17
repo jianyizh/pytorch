@@ -1,3 +1,4 @@
+#include <c10/util/env.h>
 #include <c10/util/flat_hash_map.h>
 #include <c10/util/hash.h>
 #include <c10/util/irange.h>
@@ -707,6 +708,7 @@ class DeviceCachingAllocator {
   DeviceIndex device_index;
   size_t allowed_memory_maximum = 0;
   bool set_fraction = false;
+  bool warned_reserved_overcommit = false;
   std::vector<ExpandableSegment*> expandable_segments;
   bool record_history = false;
   std::atomic<CreateContextFn> context_recorder_;
@@ -1135,6 +1137,32 @@ class DeviceCachingAllocator {
     return true;
   }
 
+  // Some kernel drivers overcommit device memory, so a SYCL allocation can
+  // succeed even when reserved memory exceeds physical device memory.
+  void maybe_warn_reserved_overcommit() {
+    static const bool enabled =
+        c10::utils::check_env("PYTORCH_XPU_WARN_RESERVED_OVERCOMMIT") == true;
+    if (!enabled || warned_reserved_overcommit) {
+      return;
+    }
+    const auto reserved =
+        stats.reserved_bytes[static_cast<size_t>(StatType::AGGREGATE)].current;
+    const auto device_total =
+        xpu::get_raw_device(device_index)
+            .get_info<sycl::info::device::global_mem_size>();
+    if (static_cast<size_t>(reserved) > device_total) {
+      warned_reserved_overcommit = true;
+      TORCH_WARN(
+          "XPU device ",
+          static_cast<int>(device_index),
+          ": reserved memory ",
+          format_size(reserved),
+          " exceeds total device memory ",
+          format_size(device_total),
+          ". The driver is overcommitting device memory.");
+    }
+  }
+
   bool alloc_block(
       AllocParams& p,
       bool isRetry,
@@ -1162,6 +1190,9 @@ class DeviceCachingAllocator {
         // The block is used only for XPU graph's PrivatePool.
         p.pool->owner_PrivatePool->allocation_count++;
       }
+      if (p.block) {
+        maybe_warn_reserved_overcommit();
+      }
       return bool(p.block);
     } else {
       allocPrimitive(&ptr, size, p);
@@ -1179,6 +1210,7 @@ class DeviceCachingAllocator {
       stats.reserved_bytes[stat_type].increase(size);
     });
     TORCH_INTERNAL_ASSERT(p.block != nullptr && p.block->ptr != nullptr);
+    maybe_warn_reserved_overcommit();
 
     record_trace(
         TraceEntry::SEGMENT_ALLOC,
